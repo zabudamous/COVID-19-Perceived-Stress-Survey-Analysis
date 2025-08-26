@@ -1,0 +1,758 @@
+---
+title: "COVID-19 Perceived Stress Survey Analysis"
+subtitle: "Exploring Demographic Differences in Perceived Stress Using Bootstrapping"
+author: "Zeina Abudamous"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    number-sections: true
+    theme: flatly
+---
+
+# Summary:
+
+This project analyzes perceived stress levels across demographic groups during the early stages of the COVID-19 pandemic using the Perceived Stress Scale (PSS) and nonparametric resampling methods. The analysis found that stress levels differed significantly by gender and age group, while differences by student and essential worker status were not statistically significant. Employment status initially appeared significant but did not hold under pairwise testing. These results highlight how public health crisis can impact groups unequally and underscore the importance of targeted mental health support in the future.
+
+```{r Libraries, echo=FALSE, message=FALSE, warning=FALSE}
+# All Libraries needed for this notebook
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(gt)
+```
+
+```{r The Data, echo=FALSE, message=FALSE}
+# Uploading the data set
+covid <- read_csv('COVID_RSPNS.csv')
+```
+
+# Introduction
+
+## Abstract
+
+In April of 2020, I independently designed and conducted a survey-based study to explore perceived stress levels across various demographic groups during the early COVID-19 pandemic. The survey consisted of 15 questions, including the validated 10-item **Perceived Stress Scale (PSS)**, which is designed to assess how individuals perceive stress in the past month. By distributing the survey online through conveniece and snowball sampling, I was able to collect responses despite lockdown restrictions. After the data cleaning and restructuring, the final data set included 490 participants and 29 variables.
+
+## Methodology
+
+This was a fully self-directed project, in which I managed the workflow end-to-end from survey design and data collection through data cleaning, analysis, and visualization.
+
+To asses group differences in stress levels, I applied **nonparametric resampling techniques**, which are especially appropriate for real-world survey data where group sizes may be imbalanced or the normality assumption may not be met.
+
+-   **permutation test:** evaluates whether an observed difference between groups-such as median scores between demographic categories-is likely to have occurred by chance, or if the difference is due to underlying reasons. This is done by repeatedly reassigning group labels within the data set and recalculating the difference each time, producing a reference distribution under the assumption of no true group effect. If the actual observed difference falls in the extreme tails of this distribution, it provides strong evidence that the difference is statistically significant. This method is particularly useful when the data don't meet the assumptions of traditional parametric tests or when the group sizes are imbalanced.
+
+-   **Bootstrapping** is a resampling technique used to estimate the stability and variability of a statistic, such as the median or the difference between groups. It involves repeatedly sampling the data set *with replacement* from each group and recalculating the statistic or interest for each resample. The resulting distribution provides an empirical basis for estimating confidence intervals and assessing uncertainty. Bootstrapping is well-suited for data sets with unequal group sizes or non-normal distributions, making it a robust approach for quantifying the reliability of findings.
+
+Together, these methods ensured that findings were both statistically rigorous and robust to real-world data limitations.
+
+## Scoring the Perceived Stress Scale (PSS)
+
+The 10-item PSS scale used in this survey asks participants questions to measure their appraisal of stress in the past month. The response options are given on a Likert scale that ranges from *Never* to *Very Often*. To prepare the responses for analysis, I converted the textual answers to numeric scores. Six of the items were forward-scaled, and four of them were reverse-scored to account for positively phrased items.
+
+-   **Forward-scored items**: Q1, Q2, Q3, Q6, Q9, Q10
+
+-   **Reverse-scored items**: Q4, Q5, Q7, Q8
+
+-   **Score Sums Ranges:**
+
+    -   0-13 = Low stress
+
+    -   14-26 = Moderate stress
+
+    -   27-40 = High stress
+
+-   The code below converts the text responses into numerical values using the scales shown above.
+
+```{r Coding Responses}
+# Coding textual responses into numeric values according to scoring guide
+
+## Creating groups for scores
+forward_score <- c("6. In the last month, how often have you been upset because of something that happened unexpectedly?",
+  "7. In the last month, how often have you felt that you were unable to control important things in your life?",
+  "8. In the last month, how often have you felt nervous and stressed?",
+  "11. In the last month, how often have you found that you could not cope with all the things that you had to do?",
+  "14. In the last month, how often have you been angered because of things that were outside of your control?",
+  "15. In the last month, how often have you felt difficulties were piling up so high that you could not overcome them?"
+)
+
+reverse_score <- c(
+  "9. In the last month, how often have you felt confident about your ability to handle your personal problems?",
+  "10. In the last month, how often have you felt that things were going your way?",
+  "12. In the last month, how often have you been able to control irritations in your life?",
+  "13. In the last month, how often have you felt that you were on top of things?"
+)
+
+## Defining Scores
+forward_val <-  c(
+  "Never" = 0,
+  "Almost Never" = 1,
+  "Sometimes" = 2,
+  "Fairly Often" = 3,
+  "Very Often" = 4
+)
+
+reverse_val <- c(
+  "Never" = 4,
+  "Almost Never" = 3,
+  "Sometimes" = 2,
+  "Fairly Often" = 1,
+  "Very Often" = 0
+)
+
+## Saving original text responses as backup columns
+covid2 <- covid |> 
+  mutate(across(all_of(c(forward_score, reverse_score)), .names = "raw_{.col}"))
+
+## Apply Scores to survey responses
+covid2 <- covid2 |> 
+  mutate(across(all_of(forward_score), ~recode(., !!!forward_val))) %>%
+  mutate(across(all_of(reverse_score), ~recode(., !!!reverse_val))) %>%
+  mutate(across(all_of(c(forward_score, reverse_score)), as.numeric))
+
+## Calculating PSS total score
+covid2 <- covid2 |> 
+  mutate(PSS_total = rowSums(across(all_of(c(forward_score, reverse_score)))))
+
+```
+
+# Data Preparation
+
+## Exploratory Data Analysis
+
+### Cleaning the Data
+
+The code below works on cleaning the data set to make it more compatible with the analysis.
+
+-   First the structure of the data is examined, and an ID column is added to make referring to specific rows easier.
+
+-   Next, all rows with any missing cells are found and removed. Due to the personal nature of the questions, there's no way the missing data could have been dealt with otherwise.
+
+-   Last, the 'Timestamp' column is changed to a 'POSIXct' format in order to make it easier for future researchers to extract specific hours/days/months from the full data in the same column. This also allows for easier time-series analysis.
+
+```{r Data Structure, message=FALSE}
+#| include: false
+# Looking at the data structure
+str(covid)
+str(covid2)
+```
+
+```{r ID Column}
+# Adding an ID column
+covid2$ID <- seq.int(nrow(covid2))
+```
+
+```{r Missing Values}
+# Removing rows with missing values
+
+## Finding rows with missing data cells
+covid_incmplt <- covid2[!complete.cases(covid2), ]
+
+## Removing the entire row if one cell is left blank
+covid2 <- covid2[-c(24,96,148,166,170,183,193,196,202,212,267,268,306,352,366,386,407,457,492,497), ]
+
+## Making sure there aren't any missing values left in any of the columns
+#colSums(is.na(covid2))
+```
+
+```{r Timestamp}
+# Changing timestamp data type
+covid2$Timestamp <- lubridate::mdy_hm(covid2$Timestamp)
+str(covid2$Timestamp)
+```
+
+### Visualizing PSS Scores
+
+#### Total PSS Scores
+
+As Plot 1 below illustrates, the shape of the distribution of total PSS scores is bimodal, and the red line in the middle represents the median total score.
+
+-   The bimodal distribution of PSS total scores means that the distribution doesn't meet the normality assumption required for most parametric statistical methods, as a result nonparametric methods will be used for analysis.
+
+```{r Plot 1: Total PSS}
+# Plotting a histogram of the total PSS scores
+
+plot1 <- ggplot(covid2, aes(PSS_total)) +
+  geom_histogram(binwidth = 2, fill = "cadetblue", color = "black") + geom_vline(aes(xintercept = median(PSS_total)),
+                                color = "red") + theme_minimal()
+plot1 <- plot1 + labs(
+  title = "Plot 1: Distribution of Total PSS Scores",
+  x = "Total PSS score",
+  y = "Number of Participants"
+)
+plot1
+```
+
+#### PSS Scores by Demographic
+
+-   Plot 2 below is a unique plot called the violin plot, which combines box plots with the distribution plots of the total PSS scores for each of the five demographics: *gender, age, employment status, essential worker status, and student status.*
+
+-   The horizontal lines on each graph at the 13 and 27 "Total PSS Score" marks refer to the scoring ranges mentioned previously. 13 and below being low stress, 14 to 16 being moderate stress and 17 to 40 being high stress. This makes it easier to distinguish the level of stress for the bulk of the participants for each subcategory.
+
+-   In each demographic's graph, there are visible differences between some of the subgroups, in the next part of the analysis we will test whether these differences are statistically significant or if they are likely due to chance.
+
+```{r Plot 2: PSS by Demographic}
+# Creating a violin graph to compare PSS scores between groups
+
+## Defining the demographics
+demographics <- c("1. Gender", 
+               "2. Age", 
+               "3. Are you considered an essential worker?", 
+               "4. Have you worked in the last month?", 
+               "5. Are you a student?")
+
+## Reshaping the data
+covid2_long <- covid2 |> 
+  select(PSS_total, all_of(demographics)) |> 
+  pivot_longer(cols = all_of(demographics),
+               names_to = "Demographic",
+               values_to = "Group")
+
+## Renaming column names to simpler descriptions
+
+covid2_long <- covid2_long |> 
+  mutate(Demographic = recode(Demographic,
+    "1. Gender" = "Gender",
+    "2. Age" = "Age Group",
+    "3. Are you considered an essential worker?" = "Essential Worker",
+    "4. Have you worked in the last month?" = "Work Status",
+    "5. Are you a student?" = "Student Status"
+  ))
+
+## Creating a violin graph for the total PSS scores for each of the demographics.
+plot2 <- ggplot(covid2_long, aes(x = Group, y = PSS_total, fill = Group)) +
+  geom_violin(trim = F, alpha = 0.5) +
+  geom_boxplot(width = 0.1, fill = "aliceblue", outlier.shape = NA) +
+  facet_wrap(~ Demographic, scales = "free_x") +
+  theme_minimal()
+
+plot2 <- plot2 + theme(axis.text.x = element_text(angle = 25, hjust = 1),
+                       legend.position = "none") +
+  labs(title = "Plot 2: Total PSS Scores per Demographic",
+       x = "Group",
+       y = "Total PSS Score")+ 
+  geom_hline(yintercept = 13, linetype = "dashed", color = "deeppink4") +
+  geom_hline(yintercept = 27, linetype = "dashed", color = "deepskyblue4") 
+plot2
+```
+
+# Statistical Analysis
+
+## Demographic Comparisons
+
+### Gender
+
+Table 1 contains the medians and standard deviations of the total PSS scores for the male and female subcategories, and Plot 3 illustrates the frequency distribution of the Total PSS scores for the gender demographic. Even though the distributions have a normal shape, the groups are clearly imbalanced, which provides further justification for using permutation tests and bootstrapping to test if the difference between medians is significantly different, instead of using a parametric method like t-tests or ANOVA.
+
+```{r Gender: EDA}
+# Calculating Summary Statistics
+sum_gender <- covid2 |> 
+  group_by(`1. Gender`) |> 
+  summarise(
+    med_gender = median(PSS_total),
+    sd_gender = round(sd(PSS_total), 3)
+  ) |> 
+  gt() |> 
+  tab_header(title ="Table 1: Gender Median & Standatd Deviations")
+sum_gender
+
+
+# Plotting subgroup distributions
+plot_gender <- ggplot(covid2,aes(x = PSS_total, fill = `1. Gender`)) + 
+  geom_histogram(position = "identity", color = "black", bins = 45) +
+  labs(title = "Plot 3: Distribution of Total PSS Scores per Gender",
+       subtitle = "Male vs. Female",
+       x = "Total PSS Score",
+       y = "Frequency",
+       fill = "Gender") +
+  theme_minimal() +
+  facet_wrap(~ `1. Gender`)
+plot_gender 
+```
+
+**Gender Test Results:**
+
+-   $$
+    H_0: Median_M = Median_F
+    $$ $$
+    H_A: Median_M \neq Median_F
+    $$
+
+-   The permutation test yielded a p-value of 0.0003, well below the 0.05 significance level, indicating that the difference in Total PSS scores between males and females is statistically significant. Bootstrapping estimated with a 95% confidence that females scored between 1 and 6 points higher than males, suggesting higher reported stress levels among females.
+
+```{r Gender: Perm}
+# Median difference in PSS scores
+obs_med_diff1 <- median(covid2$PSS_total[covid2$`1. Gender` == "Female"]) - median(covid2$PSS_total[covid2$`1. Gender` == "Male"])
+
+# Permutation Test
+set.seed(678)
+R1 <- 10000
+perm_diffs <- numeric(R1)
+
+for (i in 1:R1){
+ shuffled_gender <- sample(covid2$`1. Gender`)
+ perm_diffs[i] <- median(covid2$PSS_total[shuffled_gender == "Female"]) -
+   median(covid2$PSS_total[shuffled_gender == "Male"])
+}
+
+# Two-tailed P-value
+p_val1 <- mean(abs(perm_diffs) >= abs(obs_med_diff1))
+p_val1
+
+```
+
+```{r Gender: Bootstrap}
+#Bootstrapping the difference between medians
+set.seed(678)
+R2 <- 10000
+boot_diffs <- numeric(R2)
+
+# Original Data subsets
+female_PSS <- covid2$PSS_total[covid2$`1. Gender`== "Female"]
+male_PSS <- covid2$PSS_total[covid2$`1. Gender`== "Male"]
+
+#Bootstrap
+for (i in 1:R2) {
+  boot_F <- sample(female_PSS, replace = TRUE)
+  boot_M <- sample(male_PSS, replace = TRUE)
+  boot_diffs[i] <- median(boot_F) - median(boot_M)
+}
+
+# Confidence Intervals
+boot_ci <- quantile(boot_diffs, c(0.025, 0.975))
+boot_ci
+```
+
+### Age Group
+
+-   Due to the large difference in the number of participants of each group, the six age groups were combined into two groups. *Group A* contains participants who are 29 and under, and *Group B* contains participants who are 30 and above.
+-   Similar to the previous demographic, Table 2 contains the medians and standard deviations for each of the subcategories of the Age demographic, and Plot 4 illustrates the shape of the distributions.
+
+```{r Age: EDA}
+# Calculating Summary Statistics 
+sum_age <- covid2 |> 
+  group_by(`2. Age`) |> 
+  summarise(
+    med_age = median(PSS_total),
+    sd_age = round(sd(PSS_total), 3)
+  ) |> gt() |> 
+  tab_header(title = "Table 2: Age Group Median & Standard Deviations")
+  
+sum_age
+
+# Plotting subgroup distributions
+plot_age <- ggplot(covid2,aes(x = PSS_total, fill = `2. Age`)) + 
+  geom_histogram(position = "identity", color = "black", binwidth = 2, alpha = 0.6) +
+  labs(title ="Plot 4: Distribution of Total PSS Scores per Age Group",
+       x = "Total PSS Score",
+       y = "Frequency",
+       fill = "Age Group") +
+  theme_minimal() + theme(legend.position = "none") +
+  facet_wrap(~ `2. Age`)
+plot_age
+
+```
+
+```{r Combining Age Groups}
+# Combining Age Groups for permutation test
+covid2 <- covid2 |> 
+    mutate(Age_grouped = ifelse(`2. Age` %in% c("17 and below", "18-29"), "29 and Below", "30 and Above"))
+```
+
+**Age Group Test Results:**
+
+-   $$
+    H_0: Median_A = Median_B
+    $$ $$
+    H_A: Median_A \neq Median_B
+    $$
+
+-   The permutation test yielded a p-value of 0.0012, which is below the significance level of 0.05; therefore, we reject the null hypothesis that the median Total PSS scores are the same for the two age groups. Bootstrapping estimated, with 95% confidence, that participants aged 17-29 reported scores 1 to 4 points higher than those aged 30 and above, indicating younger participants consistently reported higher stress levels.
+
+```{r Age: Perm}
+# Median difference in PSS scores
+obs_med_diff2 <- median(covid2$PSS_total[covid2$Age_grouped == "29 and Below"]) - median(covid2$PSS_total[covid2$Age_grouped == "30 and Above"])
+
+# Permutation Test
+set.seed(678)
+Rb <- 10000
+perm_diffsb <- numeric(Rb)
+
+for (i in 1:Rb){
+ shuffled_age <- sample(covid2$Age_grouped)
+ perm_diffsb[i] <- median(covid2$PSS_total[shuffled_age == "29 and Below"]) -
+   median(covid2$PSS_total[shuffled_age == "30 and Above"])
+}
+
+# Two-tailed P-value
+p_val2 <- mean(abs(perm_diffsb) >= abs(obs_med_diff2))
+p_val2
+```
+
+```{r Age: Bootstrap}
+#Bootstrapping the difference between medians
+set.seed(678)
+Rb2 <- 10000
+boot_diffsb <- numeric(Rb2)
+
+# Original Data subsets
+groupA_PSS <- covid2$PSS_total[covid2$Age_grouped == "29 and Below"]
+groupB_PSS <- covid2$PSS_total[covid2$Age_grouped== "30 and Above"]
+
+#Bootstrap
+for (i in 1:Rb2) {
+  boot_A <- sample(groupA_PSS, replace = TRUE)
+  boot_B <- sample(groupB_PSS, replace = TRUE)
+  boot_diffsb[i] <- median(boot_A) - median(boot_B)
+}
+
+# Confidence Intervals
+boot_cib <- quantile(boot_diffsb, c(0.025, 0.975))
+boot_cib
+```
+
+### Essential Worker Status
+
+-   According to the U.S. Department of Homeland Security, **essential workers** are those who conduct a rage of operations and services that are typically essential to continue critical infrastructure operations. This category includes farm workers, healthcare providers, first responders, grocery store employees, and many more.
+
+-   Table 3 shows that the median total PSS scores were the same for participants who were essential workers and for those who were employed but not considered essential. However, participants who were not employed reported a higher median score. Plot 5 illustrates the frequency distribution of total PSS scores across the groups.
+
+```{r Essential: EDA}
+# Calculating Summary Statistics   
+sum_ess <- covid2 |> 
+  group_by(`3. Are you considered an essential worker?`) |> 
+  summarise(
+    med_ess = median(PSS_total),
+    sd_ess = round(sd(PSS_total), 3)
+  ) |> gt() |> 
+  tab_header(title = "Table 3: Essential Workers Medians & Standard Deviations")
+sum_ess
+
+# Plotting subgroup distributions
+plot_ess <- ggplot(covid2,aes(x = PSS_total, fill = `3. Are you considered an essential worker?`)) + 
+  geom_histogram(position = "identity", color = "black", bins = 45) +
+  labs(title = "Plot 5: Distributions of Total PSS Scores for Essential worker category",
+       x = "Total PSS Score",
+       y = "Frequency",
+       fill = "Essential Worker") +
+  theme_minimal() + theme(legend.position = "none") +
+  facet_wrap(~ `3. Are you considered an essential worker?`)
+plot_ess
+```
+
+**Essential Worker Test Results:**
+
+-   $H_0: Median_{NE} = Median_{NW} = Median_{E}$
+
+    $H_A:$ At least one of the group medians is different.
+
+-   The permutation test yielded a p-value of 0.1528, which is higher than the significance level of 0.05. Therefore, we *fail to reject* the null hypothesis that the median Total PSS scores are the same across *all* essential worker groups. The bootstrapped 95% confidence interval for the difference in medians range from 0 to 4.5 points. This suggests that any potential difference in reported stress levels between the groups is small and not statistically significant.
+
+```{r Essential: Perm}
+# Median difference in PSS scores
+obs_med_diff3 <- {
+  group_meds <- tapply(covid2$PSS_total, covid2$`3. Are you considered an essential worker?`, median)
+  overall_median <- median(covid2$PSS_total)
+  sum(abs(group_meds - overall_median))
+}
+
+# Permutation Test
+set.seed(678)
+Rc1 <- 10000
+perm_stat <- numeric(Rc1)
+
+for (i in 1:Rc1){
+ shuffled_ess <- sample(covid2$`3. Are you considered an essential worker?`)
+ group_meds <- tapply(covid2$PSS_total, shuffled_ess, median)
+ overall_median <- median(covid2$PSS_total)
+ perm_stat[i] <- sum(abs(group_meds - overall_median))
+}
+
+# Two-tailed P-value
+p_val3 <- mean(perm_stat >= obs_med_diff3)
+p_val3
+```
+
+```{r Essential: Bootstrap}
+# Bootstrapping the difference between medians
+set.seed(678)
+Rc2 <- 10000
+boot_diffsc <- numeric(Rc2)
+
+# Defining the groups
+ess_groups <- unique(covid2$`3. Are you considered an essential worker?`)
+
+# Grouping the data
+group_data <- lapply(ess_groups, function(g) covid2$PSS_total[covid2$`3. Are you considered an essential worker?`== g])
+
+# The bootstrap
+for (i in 1:Rc2) {
+  resampled_data <- lapply(group_data, function(gdata) sample(gdata, replace = TRUE))
+  resampled_meds <- sapply(resampled_data, median)
+  overall_median <- median(unlist(resampled_data))
+  boot_diffsc[i] <- sum(abs(resampled_meds - overall_median))
+}
+
+# Calculating the 95% confidence interval
+bootcic <- quantile(boot_diffsc, c(0.025, 0.975));bootcic
+```
+
+### Employment Status
+
+-   According to the U.S. Labor Department, nearly 879,000 Californians had lost their jobs in the week ending March 28, 2020. At the same time, many people were transitioned to working from home, while others continued to physically go to work. For the first time, school, work meetings, court hearings and even social interactions were mostly conducted online.
+
+-   In this sample, participants were divided into three groups: unemployed, working from home, and working on-site. Table 4 shows that the median for those working from home and on-site were equal, while unemployed participants had a higher median. Plot 6 illustrates the frequency distribution across these groups.
+
+```{r Employment: EDA}
+# Calculating summary statistics
+sum_employ <- covid2 |> 
+  group_by(`4. Have you worked in the last month?`) |> 
+  summarise(
+    med_employ = median(PSS_total),
+    sd_employ = sd(PSS_total)
+  ) |>  gt() |> 
+  tab_header(title = "Table 4: Employment Status Medians & Standard Deviations")
+sum_employ
+
+# Plotting subgroup distributions
+plot_employ <- ggplot(covid2,aes(x = PSS_total, fill = `4. Have you worked in the last month?`)) + 
+  geom_histogram(position = "identity", color = "black", bins = 45) +
+  labs(title = "Plot 6: Distribution of Total PSS Scores for Employment Status",
+       x = "Total PSS Score",
+       y = "Frequency",
+       fill = "Employment Location") +
+  theme_minimal() + theme(legend.position = "none") +
+  facet_wrap(~ `4. Have you worked in the last month?`)
+plot_employ
+```
+
+**Employment Status Test Results:**
+
+-   $H_0:Median_{NW}=Median_{YW}=Median_{WFH}$
+
+    $H_A:$ At least one of the group medians is different.
+
+<!-- -->
+
+-   The permutation test yielded a p_value of 0.0377, which is below the significance level of 0.05; therefore, we reject the null hypothesis and conclude that stress levels differ based on recent employment status. The bootstrapped 95% confidence interval for the difference in median total PSS scores ranged from 0 to 6 points, suggesting that while a difference is likely, the size of the effect may vary from minimal to moderately large.
+
+-   Although the overall permutation test suggests a possible difference in total PSS scores across the work status groups, the pairwise post-hoc comparisons with the adjusted p-values were **not significant.**
+
+```{r Employment: Perm}
+# Median difference in PSS scores
+obs_med_diff4 <- {
+  group_meds2 <- tapply(covid2$PSS_total, covid2$`4. Have you worked in the last month?`, median)
+  overall_median2 <- median(covid2$PSS_total)
+  sum(abs(group_meds2 - overall_median2))
+}
+
+# Permutation Test
+set.seed(678)
+Rd1 <- 10000
+perm_statb <- numeric(Rd1)
+
+for (i in 1:Rd1){
+ shuffled_work <- sample(covid2$`4. Have you worked in the last month?`)
+ group_meds2 <- tapply(covid2$PSS_total, shuffled_work, median)
+ overall_median2 <- median(covid2$PSS_total)
+ perm_statb[i] <- sum(abs(group_meds2 - overall_median2))
+}
+
+# Two-tailed P-value
+p_val4 <- mean(abs(perm_statb) >= abs(obs_med_diff4))
+p_val4
+
+
+# Convert to dataframe
+perm_dfd <- data.frame(perm_stat = perm_stat)
+```
+
+```{r Employment: Bootstrap}
+# Bootstrapping the difference between medians
+set.seed(678)
+Rd2 <- 10000
+boot_diffsd <- numeric(Rd2)
+
+# Defining the groups
+ess_groups2 <- unique(covid2$`4. Have you worked in the last month?`)
+
+# Grouping the data
+group_data2 <- lapply(ess_groups2, function(f) covid2$PSS_total[covid2$`4. Have you worked in the last month?`== f])
+
+# The bootstrap
+for (i in 1:Rd2) {
+  resampled_meds2 <- sapply(group_data2, function(fdata) median(sample(fdata, replace = TRUE)))
+  overall_median2 <- median(unlist(lapply(group_data2, function(fdata) sample(fdata, replace = TRUE))))
+  boot_diffsd[i] <- sum(abs(resampled_meds2 - overall_median2))
+}
+
+bootcid <- quantile(boot_diffsd, c(0.025, 0.975));bootcid
+```
+
+```{r Employment: Post-hoc}
+# Pairwise post-hoc permutation tests for group medians
+set.seed(789)
+Rd1 <- 10000
+groups <- levels(factor(covid2$`4. Have you worked in the last month?`))
+
+pairwise_results <- data.frame(
+  group1 = character(),
+  group2 = character(),
+  obs_diff = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for(i in 1:(length(groups)-1)){
+  for(j in (i+1):length(groups)){
+    
+    g1 <- groups[i]
+    g2 <- groups[j]
+    
+    # Subset data
+    sub_data <- subset(covid2, `4. Have you worked in the last month?` %in% c(g1, g2))
+    
+    # Observed difference in medians
+    obs_diff <- median(sub_data$PSS_total[sub_data$`4. Have you worked in the last month?` == g1]) -
+                median(sub_data$PSS_total[sub_data$`4. Have you worked in the last month?` == g2])
+    
+    # Permutation test
+    perm_diffs <- replicate(Rd1, {
+      shuffled <- sample(sub_data$`4. Have you worked in the last month?`)
+      med1 <- median(sub_data$PSS_total[shuffled == g1])
+      med2 <- median(sub_data$PSS_total[shuffled == g2])
+      med1 - med2
+    })
+    
+    p_val <- mean(abs(perm_diffs) >= abs(obs_diff))
+    
+    # Store results
+    pairwise_results <- rbind(
+      pairwise_results,
+      data.frame(group1=g1, group2=g2, obs_diff=obs_diff, p_value=p_val)
+    )
+  }
+}
+
+# Adjust p-values (Holm or FDR recommended)
+pairwise_results$p_adj <- p.adjust(pairwise_results$p_value, method="holm") 
+
+pairwise_results 
+```
+
+### Student Status
+
+This demographic also contains imbalanced groups. There are a lot more non-students than students, as we can see in Plot 7, we can also see that the distributions normality is questionable. Table 5 shows a 1.5 point difference between the student median and the non-student median, the permutation test will reveal if this difference is significant.
+
+```{r Student: EDA}
+# Calculating summary statistics
+sum_student <- covid2 |> 
+  group_by(`5. Are you a student?`) |> 
+  summarise(
+    med_student = median(PSS_total),
+    sd_student = round(sd(PSS_total), 3)
+  ) |> gt() |> 
+  tab_header(title = "Table 5: Student Status Medians & Standard Deviations")
+sum_student
+
+# Plotting subgroup distributions
+plot_student <- ggplot(covid2,aes(x = PSS_total, fill = `5. Are you a student?`)) + 
+  geom_histogram(position = "identity", color = "black", bins = 45, binwidth = 2) +
+  labs(title = "Plot 7: Distribution of Total PSS Scores for Student Status",
+       x = "Total PSS Score",
+       y = "Frequency",
+       fill = "Student Status") +
+  theme_minimal() + theme(legend.position = "none") +
+  facet_wrap(~ `5. Are you a student?`)
+plot_student
+```
+
+**Student Status Test Results:**
+
+-   $$
+    H_0: Median_S = Median_{NS}
+    $$
+
+    $$
+    H_A: Median_S \neq Median_{NS}
+    $$
+
+-   The permutation test resulted in a p-value of 0.0806, which is greater than the 0.05 significance level; as a result, we fail to reject the null hypothesis concluding that there is no statistically significant difference in median total PSS scores between students and non-students. The bootstrapped 95% confidence interval ranges from -1 to +3. This means that students could have reported slightly lower, slightly higher or about the same stress levels as non-students. 0 being included in the interval confirms the absence of evidence of a statistically significant difference between the groups.
+
+```{r Student: Perm}
+# Observed median difference
+obs_med_diff5 <- median(covid2$PSS_total[covid2$`5. Are you a student?` == "Yes"]) - 
+                 median(covid2$PSS_total[covid2$`5. Are you a student?` == "No"])
+
+# Permutation Test
+set.seed(678)
+Re <- 10000
+perm_diffse <- numeric(Re)
+
+for (i in 1:Re) {
+  shuffled_student <- sample(covid2$`5. Are you a student?`)
+  perm_diffse[i] <- median(covid2$PSS_total[shuffled_student == "Yes"]) - 
+                    median(covid2$PSS_total[shuffled_student == "No"])
+}
+
+# Two-tailed P-value
+p_val5 <- mean(abs(perm_diffse) >= abs(obs_med_diff5))
+p_val5
+```
+
+```{r Student: Bootstrap}
+#Bootstrapping the difference between medians
+set.seed(678)
+Re2 <- 10000
+boot_diffse <- numeric(Re2)
+
+# Original Data subsets
+stdnt_PSS <- covid2$PSS_total[covid2$`5. Are you a student?` == "Yes"]
+ntstdnt_PSS <- covid2$PSS_total[covid2$`5. Are you a student?` == "No"]
+
+#Bootstrap
+for (i in 1:Re2) {
+  boot_stdnt <- sample(stdnt_PSS, replace = TRUE)
+  boot_ntstdnt <- sample(ntstdnt_PSS, replace = TRUE)
+  boot_diffse[i] <- median(boot_stdnt) - median(boot_ntstdnt)
+}
+
+# Confidence Intervals
+boot_cie <- quantile(boot_diffse, c(0.025, 0.975))
+boot_cie
+```
+
+# Conclusion
+
+## Key Findings
+
+This study compared the perceived stress scores across gender, age, employment, student, and essential worker groups during the early stages of the COVID-19 pandemic. Using permutation tests and bootstrapping, several patterns emerged:
+
+-   **Gender:** Female participants reported significantly higher stress levels than male participants, with a difference of 1-6 points on the PSS (95% CI).
+
+-   **Age:** Younger participants (\<30) experienced higher stress than older participants, with a difference of 1-4 points (95% CI), and this difference was statistically significant.
+
+-   **Employment & Essential Worker Status:** Although unemployed individuals showed slightly higher stress than those working (remote or in-person), these differences were not statistically significant when a post-hoc test was conducted. When compared to essential workers, unemployed participants reported slightly higher stress, but these results were also not statistically significant.
+
+-   **Student Status:** Students reported marginally higher stress than non-students, but the difference was not statistically significant.
+
+## Reflection
+
+These results highlight how the pandemic’s stress burden was unevenly distributed, disproportionately affecting women and younger adults. While employment and student status did not show statistically significant effects in this dataset, the observed patterns suggest areas worth further exploration with larger or more representative samples.
+
+From a data science perspective, this project reinforced the value of **nonparametric resampling methods** in handling survey data that violate parametric assumptions. It also underscored the importance of communicating results in ways that capture both **statistical rigor** and **practical implications**.
+
+## Future Work
+
+Future research could extend this analysis by:
+
+-    Collecting data across multiple time points to track how stress levels evolve over the course of a prolonged crisis.
+
+-    Expanding demographic categories (e.g., socioeconomic status, caregiving responsibilities) to uncover additional disparities.
+
+-    Incorporating multivariate models to explore interaction effects in greater depth.
+
+-    Comparing pandemic-related stress with baseline stress levels in non-crisis contexts.
+
+By continuing to refine both methodology and scope, this type of analysis can inform targeted interventions and policies aimed at supporting the groups most vulnerable to stress during public health emergencies.
