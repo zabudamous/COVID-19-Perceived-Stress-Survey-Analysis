@@ -414,7 +414,7 @@ boot_cib
 
 ### Essential Worker Status
 
--   According to the U.S. Department of Homeland Security, **essential workers** are those who conduct a rage of operations and services that are typically essential to continue critical infrastructure operations. This category includes farm workers, healthcare providers, first responders, grocery store employees, and many more.
+-   According to the U.S. Department of Homeland Security, **essential workers** are those who conduct a range of operations and services that are typically essential to continue critical infrastructure operations. This category includes farm workers, healthcare providers, first responders, grocery store employees, and many more.
 
 -   Table 3 shows that the median total PSS scores were the same for participants who were essential workers and for those who were employed but not considered essential. However, participants who were not employed reported a higher median score. Plot 5 illustrates the frequency distribution of total PSS scores across the groups.
 
@@ -447,7 +447,7 @@ plot_ess
 
     $H_A:$ At least one of the group medians is different.
 
--   The permutation test yielded a p-value of 0.1528, which is higher than the significance level of 0.05. Therefore, we *fail to reject* the null hypothesis that the median Total PSS scores are the same across *all* essential worker groups. The bootstrapped 95% confidence interval for the difference in medians range from 0 to 4.5 points. This suggests that any potential difference in reported stress levels between the groups is small and not statistically significant.
+-   The permutation test produced a p-value of 0.1528, which exceeds the 0.05 significance threshold. As a result, we fail to reject the null hypothesis that the median Total PSS scores are equal across essential worker groups. The bootstrapped 95% confidence interval for the difference in medians ranges from 0 to 4.5 points, indicating that any observed differences in stress levels are small and not statistically significant.
 
 ```{r Essential: Perm}
 # Median difference in PSS scores
@@ -747,12 +747,12 @@ From a data science perspective, this project reinforced the value of **nonparam
 
 Future research could extend this analysis by:
 
--    Collecting data across multiple time points to track how stress levels evolve over the course of a prolonged crisis.
+-   Collecting data across multiple time points to track how stress levels evolve over the course of a prolonged crisis.
 
--    Expanding demographic categories (e.g., socioeconomic status, caregiving responsibilities) to uncover additional disparities.
+-   Expanding demographic categories (e.g., socioeconomic status, caregiving responsibilities) to uncover additional disparities.
 
--    Incorporating multivariate models to explore interaction effects in greater depth.
+-   Incorporating multivariate models to explore interaction effects in greater depth.
 
--    Comparing pandemic-related stress with baseline stress levels in non-crisis contexts.
+-   Comparing pandemic-related stress with baseline stress levels in non-crisis contexts.
 
 By continuing to refine both methodology and scope, this type of analysis can inform targeted interventions and policies aimed at supporting the groups most vulnerable to stress during public health emergencies.
